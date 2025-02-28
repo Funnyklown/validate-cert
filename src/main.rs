@@ -3,6 +3,7 @@ use clap::Command;
 use der::{Decode, DecodePem};
 use std::fs;
 use std::path::PathBuf;
+use std::time::UNIX_EPOCH;
 use x509_cert::{Certificate, certificate::CertificateInner};
 use x509_parser::prelude::FromDer;
 use x509_parser::prelude::KeyUsage;
@@ -38,6 +39,7 @@ fn main() -> anyhow::Result<()> {
                     println!("Subject: {}", cert.tbs_certificate.subject);
                     println!("Issuer: {}", cert.tbs_certificate.issuer);
                     check_key_usage(&cert)?;
+                    check_expiration(&cert)?;
                 }
             }
             "PEM" => {
@@ -46,6 +48,7 @@ fn main() -> anyhow::Result<()> {
                     println!("Subject: {}", cert.tbs_certificate.subject);
                     println!("Issuer: {}", cert.tbs_certificate.issuer);
                     check_key_usage(&cert)?;
+                    check_expiration(&cert)?;
                 }
             }
             _ => unreachable!(),
@@ -61,13 +64,19 @@ fn check_key_usage(cert: &Certificate) -> anyhow::Result<()> {
             let key_usage = KeyUsage::from_der(&ext.extn_value.as_bytes())?;
 
             println!("Key Usage: {}", key_usage.1);
+
+            if key_usage.1.crl_sign() || key_usage.1.key_cert_sign() {
+                println!("Key usage is problematic for this scope!");
+            }
+
             return Ok(());
         }
         println!("Key Usage extension not found.");
     } else {
         println!("No extensions found in the certificate.");
     }
-    //TODO! add logic to check if key usage is correct for the scope 
+
+    //TODO! add logic to check if key usage is correct for the scope
     Ok(())
 }
 
@@ -75,9 +84,16 @@ fn check_expiration(cert: &Certificate) -> anyhow::Result<()> {
     let not_after = cert.tbs_certificate.validity.not_after.to_unix_duration();
     let not_before = cert.tbs_certificate.validity.not_before.to_unix_duration();
 
-    
+    let current_time = std::time::SystemTime::now().duration_since(UNIX_EPOCH)?;
 
-    if 
+    if !(not_before < current_time && current_time < not_after) {
+        println!("Certificate Expired!");
+    } else {
+        println!("-----------------------Expiration-----------------------");
+        println!("Not Before: {}", cert.tbs_certificate.validity.not_before);
+        println!("Not After: {}", cert.tbs_certificate.validity.not_after);
+        println!("--------------------------------------------------------")
+    }
 
     Ok(())
 }
