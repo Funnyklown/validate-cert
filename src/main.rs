@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
 
 fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyhow::Result<()> {
     let mut ocsp_url = None;
-    
+
     for ext in cert.extensions() {
         if let ParsedExtension::AuthorityInfoAccess(aia) = ext.parsed_extension() {
             for access_desc in aia.accessdescs.clone() {
@@ -125,6 +125,8 @@ fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyh
     if let Some(url) = ocsp_url {
         println!("{} {}", "OCSP URL:".white().bold(), url);
     }
+
+    //ADD CODE HERE
 
     Ok(())
 }
