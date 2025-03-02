@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
         };
     }
 
-    println!("--------------------------------------------------");
+    println!("------------------------------------------------------------");
 
     let registry = OidRegistry::default().with_all_crypto();
 
@@ -102,7 +102,7 @@ fn main() -> anyhow::Result<()> {
             check_ocsp(cert, parent.unwrap())?;
         }
 
-        println!("--------------------------------------------------");
+        println!("------------------------------------------------------------");
     }
 
     Ok(())
@@ -110,7 +110,7 @@ fn main() -> anyhow::Result<()> {
 
 fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyhow::Result<()> {
     let mut ocsp_url = None;
-    // Parcourir les extensions pour trouver l'extension AIA avec OCSP URL
+    
     for ext in cert.extensions() {
         if let ParsedExtension::AuthorityInfoAccess(aia) = ext.parsed_extension() {
             for access_desc in aia.accessdescs.clone() {
