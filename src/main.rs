@@ -1,9 +1,9 @@
 use clap::{Arg, Command};
 use colored::{ColoredString, Colorize};
 use std::fs;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use x509_parser::certificate::X509Certificate;
-use x509_parser::nom::AsBytes;
 use x509_parser::oid_registry::OidRegistry;
 use x509_parser::pem::{self, Pem};
 use x509_parser::prelude::{DistributionPointName, FromDer, GeneralName, ParsedExtension};
@@ -123,10 +123,8 @@ fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyh
     }
 
     if let Some(url) = ocsp_url {
-        println!("{} {}", "OCSP URL:".white().bold(), url);
+        println!("{} {}", "OCSP:".white().bold(), url);
     }
-
-    //ADD CODE HERE
 
     Ok(())
 }
@@ -168,37 +166,59 @@ fn check_crl(cert: &X509Certificate<'_>, parent: &X509Certificate<'_>) -> anyhow
     Ok(())
 }
 
-/// Downloads, parses, and checks a CRL.
 fn get_crl_state(
     uri: &str,
     cert: &X509Certificate,
     parent: &X509Certificate,
 ) -> anyhow::Result<ColoredString> {
-    let response = reqwest::blocking::get(uri)?;
-    let crl_bytes = response.bytes()?;
+    let filename = uri.split('/').last().unwrap();
+    let cache_folder = PathBuf::from("crl_cache");
+    let filepath = cache_folder.join(filename);
 
-    let crl = CertificateRevocationList::from_der(crl_bytes.as_bytes())?.1;
-
-    let mut valid = "OK".bold().green();
-
-    if crl.verify_signature(parent.public_key()).is_err() {
-        valid = "KO (Bad Signature)".bold().red();
+    if !cache_folder.exists() {
+        fs::create_dir(&cache_folder)?;
     }
 
+    let data = match fs::read(&filepath) {
+        Ok(data) => data,
+        Err(_) => {
+            let data = reqwest::blocking::get(uri)?.bytes()?.to_vec();
+            fs::write(&filepath, &data)?;
+            data
+        }
+    };
+
+    let (_, crl) = CertificateRevocationList::from_der(&data)?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
-    if now < crl.last_update().timestamp() || now > crl.next_update().unwrap().timestamp() {
-        valid = "KO (Stale)".bold().red();
+    if now < crl.last_update().timestamp()
+        || now > crl.next_update().unwrap_or(crl.last_update()).timestamp()
+    {
+        let data = reqwest::blocking::get(uri)?.bytes()?.to_vec();
+        fs::write(&filepath, &data)?;
+        let (_, crl) = CertificateRevocationList::from_der(&data)?;
+        return Ok(validate_crl(&crl, cert, parent));
     }
 
-    // Check if the certificate is revoked
-    for revoked_cert in crl.iter_revoked_certificates() {
-        if revoked_cert.user_certificate == cert.serial {
-            valid = "KO (Revoked)".bold().red();
-        }
+    Ok(validate_crl(&crl, cert, parent))
+}
+
+fn validate_crl(
+    crl: &CertificateRevocationList,
+    cert: &X509Certificate,
+    parent: &X509Certificate,
+) -> ColoredString {
+    if crl.verify_signature(parent.public_key()).is_err() {
+        return "KO (Bad Signature)".bold().red();
+    }
+    if crl
+        .iter_revoked_certificates()
+        .any(|c| c.serial() == &cert.serial)
+    {
+        return "KO (Revoked)".bold().red();
     }
 
-    Ok(valid)
+    "OK".bold().green()
 }
 
 /// Checks whether the BasicConstraints of the certificate are suspicious.
