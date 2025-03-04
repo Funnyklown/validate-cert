@@ -64,10 +64,11 @@ fn main() -> anyhow::Result<()> {
 
     println!("------------------------------------------------------------");
 
+    // Used to translate oid codes to readable strings
     let registry = OidRegistry::default().with_all_crypto();
 
     for (index, cert) in certs.iter().enumerate() {
-        let parent = if index == 0 {
+        let issuer = if index == 0 {
             None
         } else {
             certs.get(index - 1)
@@ -75,19 +76,19 @@ fn main() -> anyhow::Result<()> {
 
         let is_leaf = index == certs.len() - 1;
 
-        if parent.is_none() {
+        if issuer.is_none() {
             check_identity(cert, cert)?;
         } else {
-            check_identity(cert, parent.unwrap())?;
+            check_identity(cert, issuer.unwrap())?;
         }
 
         print_pubkey(cert, &registry)?;
 
-        //If we have no parent, we have to be a root
-        if parent.is_none() {
+        //If we have no issuer, we have to be a root
+        if issuer.is_none() {
             check_sign(cert, cert, &registry)?;
         } else {
-            check_sign(cert, parent.unwrap(), &registry)?;
+            check_sign(cert, issuer.unwrap(), &registry)?;
         }
 
         //If we're last, we have to be a leaf
@@ -97,14 +98,25 @@ fn main() -> anyhow::Result<()> {
         check_basic_constraints(cert, is_leaf)?;
 
         // Roots don't have CRLs for obvious reasons
-        if parent.is_some() {
-            check_crl(cert, parent.unwrap())?;
-            check_ocsp(cert, parent.unwrap())?;
+        if issuer.is_some() {
+            check_crl(cert, issuer.unwrap())?;
+            check_ocsp(cert)?;
+
+            check_sign_manual(&cert, &issuer.unwrap())?;
         }
+
+       
 
         println!("------------------------------------------------------------");
     }
+    
+    Ok(())
+}
 
+fn check_sign_manual(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>) -> anyhow::Result<()> {
+    let sign_algo = cert.signature_algorithm.parameters().unwrap();
+
+    println!("sign: {:#?}", sign_algo);
     Ok(())
 }
 
@@ -113,7 +125,7 @@ fn main() -> anyhow::Result<()> {
 /// see: https://letsencrypt.org/2024/12/05/ending-ocsp/
 ///
 /// Currently only retrieves and prints the url of the ocsp responder.
-fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyhow::Result<()> {
+fn check_ocsp(cert: &X509Certificate<'_>) -> anyhow::Result<()> {
     let mut ocsp_url = None;
 
     for ext in cert.extensions() {
@@ -135,7 +147,7 @@ fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyh
 }
 
 /// Checks whether the given certificate's crl marks it as revoked using helper functions.
-fn check_crl(cert: &X509Certificate<'_>, parent: &X509Certificate<'_>) -> anyhow::Result<()> {
+fn check_crl(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>) -> anyhow::Result<()> {
     let mut crl = None;
     let mut valid = "OK".green().bold();
 
@@ -149,7 +161,7 @@ fn check_crl(cert: &X509Certificate<'_>, parent: &X509Certificate<'_>) -> anyhow
                         if let GeneralName::URI(uri) = general_name {
                             crl = Some(uri);
 
-                            valid = get_crl_state(uri, cert, parent)
+                            valid = get_crl_state(uri, cert, issuer)
                                 .unwrap_or("KO (Check Failed)".red().bold());
                         }
                     }
@@ -177,7 +189,7 @@ fn check_crl(cert: &X509Certificate<'_>, parent: &X509Certificate<'_>) -> anyhow
 fn get_crl_state(
     uri: &str,
     cert: &X509Certificate,
-    parent: &X509Certificate,
+    issuer: &X509Certificate,
 ) -> anyhow::Result<ColoredString> {
     let filename = uri.split('/').last().unwrap();
     let cache_folder = PathBuf::from("crl_cache");
@@ -206,20 +218,20 @@ fn get_crl_state(
         let data = reqwest::blocking::get(uri)?.bytes()?.to_vec();
         fs::write(&filepath, &data)?;
         let (_, crl) = CertificateRevocationList::from_der(&data)?;
-        return Ok(validate_crl(&crl, cert, parent));
+        return Ok(validate_crl(&crl, cert, issuer));
     }
 
-    Ok(validate_crl(&crl, cert, parent))
+    Ok(validate_crl(&crl, cert, issuer))
 }
 
-/// Helper function, given a crl and a certificate child/parent chain, returns the state of the certificate:
+/// Helper function, given a crl and a certificate child/issuer chain, returns the state of the certificate:
 /// OK / KO (Bad Signature) / KO (Revoked)
 fn validate_crl(
     crl: &CertificateRevocationList,
     cert: &X509Certificate,
-    parent: &X509Certificate,
+    issuer: &X509Certificate,
 ) -> ColoredString {
-    if crl.verify_signature(parent.public_key()).is_err() {
+    if crl.verify_signature(issuer.public_key()).is_err() {
         return "KO (Bad Signature)".bold().red();
     }
     if crl
@@ -282,14 +294,14 @@ fn print_pubkey(cert: &X509Certificate, registry: &OidRegistry) -> anyhow::Resul
     Ok(())
 }
 
-/// Checks whether the certificate's subject & issuer are valid based on the parent certificate.
-fn check_identity(cert: &X509Certificate, parent: &X509Certificate) -> anyhow::Result<()> {
+/// Checks whether the certificate's subject & issuer are valid based on the issuer certificate.
+fn check_identity(cert: &X509Certificate, issuer: &X509Certificate) -> anyhow::Result<()> {
     let mut valid = "OK".bold().green();
-    if cert.public_key() == parent.public_key() {
+    if cert.public_key() == issuer.public_key() {
         if cert.tbs_certificate.subject != cert.tbs_certificate.issuer {
             valid = "KO".bold().red();
         }
-    } else if cert.tbs_certificate.issuer != parent.tbs_certificate.subject {
+    } else if cert.tbs_certificate.issuer != issuer.tbs_certificate.subject {
         valid = "KO".bold().red();
     }
 
@@ -309,13 +321,13 @@ fn check_identity(cert: &X509Certificate, parent: &X509Certificate) -> anyhow::R
     Ok(())
 }
 
-/// Checks the signature of the current certificate using the parent's public key.
+/// Checks the signature of the current certificate using the issuer's public key.
 fn check_sign(
     cert: &X509Certificate,
-    parent: &X509Certificate,
+    issuer: &X509Certificate,
     registry: &OidRegistry,
 ) -> anyhow::Result<()> {
-    let valid = if cert.verify_signature(Some(parent.public_key())).is_err() {
+    let valid = if cert.verify_signature(Some(issuer.public_key())).is_err() {
         "KO".bold().red()
     } else if cert.verify_signature(None).is_ok() {
         "OK (Self-Signed)".bold().green()
