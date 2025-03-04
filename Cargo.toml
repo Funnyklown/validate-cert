@@ -10,6 +10,3 @@ anyhow = "1.0"
 hex = "0.4"
 colored = "3.0"
 reqwest = { version = "0.12", features = ["blocking"] }
-rsa = "0.9"
-sha2 = "0.10"
-der = "0.7"
