@@ -90,8 +90,10 @@ fn main() -> anyhow::Result<()> {
         //If we have no issuer, we have to be a root
         if issuer.is_none() {
             check_sign(cert, cert, &registry)?;
+            check_sign_manual(cert, cert)?;
         } else {
             check_sign(cert, issuer.unwrap(), &registry)?;
+            check_sign_manual(cert, issuer.unwrap())?;
         }
 
         //If we're last, we have to be a leaf
@@ -104,8 +106,6 @@ fn main() -> anyhow::Result<()> {
         if issuer.is_some() {
             check_crl(cert, issuer.unwrap())?;
             check_ocsp(cert)?;
-
-            check_sign_manual(cert, issuer.unwrap())?;
         }
 
         println!("------------------------------------------------------------");
