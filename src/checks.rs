@@ -84,7 +84,7 @@ pub fn check_sign(
     println!(
         "{} {} {:>5}",
         signature_str,
-        hex::encode(&cert.signature_value.data),
+        crate::truncate(&hex::encode(&cert.signature_value.data), 100),
         valid
     );
 
@@ -184,7 +184,7 @@ pub fn check_sign_manual(
 
     let sha256_header = hex::decode("3031300d060960864801650304020105000420")?;
 
-    let digest = ring::digest::digest(&ring::digest::SHA256, &cert.tbs_certificate.as_ref());
+    let digest = ring::digest::digest(&ring::digest::SHA256, cert.tbs_certificate.as_ref());
     let hash = digest.as_ref();
 
     let mut expected = Vec::new();
@@ -205,7 +205,7 @@ pub fn check_sign_manual(
                 .map(|pos| &res_slice[pos + 1..])
                 .unwrap_or(&[]);
 
-            if !(depadded_result == expected) {
+            if depadded_result != expected {
                 valid = "KO".red().bold();
             }
         }

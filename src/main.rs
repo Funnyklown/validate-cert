@@ -127,7 +127,20 @@ fn print_pubkey(cert: &X509Certificate, registry: &OidRegistry) -> anyhow::Resul
     println!(
         "{} {}",
         pubkey_str,
-        hex::encode(&cert.public_key().subject_public_key.data),
+        truncate(
+            &hex::encode(&cert.public_key().subject_public_key.data),
+            100
+        )
     );
     Ok(())
+}
+
+pub fn truncate(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        let mut truncated = s.chars().take(max_len).collect::<String>();
+        truncated.push_str("...");
+        truncated
+    }
 }
