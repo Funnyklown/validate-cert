@@ -108,6 +108,11 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Should be checking ocsp, but as let's encrypt is sunsetting the entire protocol as of may 2025
+/// no rust crate has been built to verify an obsolete protocol.
+/// see: https://letsencrypt.org/2024/12/05/ending-ocsp/
+///
+/// Currently only retrieves and prints the url of the ocsp responder.
 fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyhow::Result<()> {
     let mut ocsp_url = None;
 
@@ -129,7 +134,7 @@ fn check_ocsp(cert: &X509Certificate<'_>, _issuer: &X509Certificate<'_>) -> anyh
     Ok(())
 }
 
-/// Checks whether the given certificate's crl marks it as revoked.
+/// Checks whether the given certificate's crl marks it as revoked using helper functions.
 fn check_crl(cert: &X509Certificate<'_>, parent: &X509Certificate<'_>) -> anyhow::Result<()> {
     let mut crl = None;
     let mut valid = "OK".green().bold();
@@ -166,6 +171,9 @@ fn check_crl(cert: &X509Certificate<'_>, parent: &X509Certificate<'_>) -> anyhow
     Ok(())
 }
 
+/// Retrieves the crl from cache if it exists, or fetches it if not available.
+/// Returns the state of the certificate passed as argument:
+/// OK / KO (Revoked) / KO (Bad Signature)
 fn get_crl_state(
     uri: &str,
     cert: &X509Certificate,
@@ -191,6 +199,7 @@ fn get_crl_state(
     let (_, crl) = CertificateRevocationList::from_der(&data)?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
 
+    // If the cache is stale, we need to fetch the new version of the crl.
     if now < crl.last_update().timestamp()
         || now > crl.next_update().unwrap_or(crl.last_update()).timestamp()
     {
@@ -203,6 +212,8 @@ fn get_crl_state(
     Ok(validate_crl(&crl, cert, parent))
 }
 
+/// Helper function, given a crl and a certificate child/parent chain, returns the state of the certificate:
+/// OK / KO (Bad Signature) / KO (Revoked)
 fn validate_crl(
     crl: &CertificateRevocationList,
     cert: &X509Certificate,
@@ -221,16 +232,19 @@ fn validate_crl(
     "OK".bold().green()
 }
 
-/// Checks whether the BasicConstraints of the certificate are suspicious.
+/// Checks whether the BasicConstraints of the certificate are suspicious for the given use case.
 fn check_basic_constraints(cert: &X509Certificate, is_leaf: bool) -> anyhow::Result<()> {
     let mut valid = "OK".green().bold();
 
     match cert.basic_constraints()? {
         Some(bc) => {
+            // A leaf should not be a ca, conversely, a ca should never be a leaf.
             if (is_leaf && bc.value.ca) || (!is_leaf && !bc.value.ca) {
                 valid = "KO".red().bold();
             }
 
+            // If it exists, we print the path length constraint, be do no further checks
+            // Room for improvement here.
             if bc.value.ca {
                 if let Some(path_len) = bc.value.path_len_constraint {
                     println!("{} {}", "Path Length Constraint:".white().bold(), path_len);
@@ -251,6 +265,7 @@ fn check_basic_constraints(cert: &X509Certificate, is_leaf: bool) -> anyhow::Res
 }
 
 /// Prints the public key of the given certificate with nice formatting.
+/// Uses the oid registry to map oid numbers to names.
 fn print_pubkey(cert: &X509Certificate, registry: &OidRegistry) -> anyhow::Result<()> {
     let oid_name = registry
         .get(cert.public_key().algorithm.oid())
