@@ -2,11 +2,8 @@ use colored::Colorize;
 use num_bigint::BigUint;
 use x509_parser::certificate::X509Certificate;
 use x509_parser::oid_registry::OidRegistry;
-use x509_parser::prelude::FromDer;
 use x509_parser::prelude::{GeneralName, ParsedExtension};
 use x509_parser::public_key::PublicKey;
-use x509_parser::signature_value::EcdsaSigValue;
-
 /// Should be checking ocsp, but as let's encrypt is sunsetting the entire protocol as of may 2025
 /// no rust crate has been built to verify an obsolete protocol.
 /// see: https://letsencrypt.org/2024/12/05/ending-ocsp/
@@ -176,6 +173,7 @@ pub fn check_basic_constraints(cert: &X509Certificate, is_leaf: bool) -> anyhow:
 
 /// Manually checks the signature of the given certificate without using cryptography crates.
 /// Only works with RSA and Elliptic Curves public key algorithms.
+/// Assumes SHA256 is used for hashing.
 pub fn check_sign_manual(
     cert: &X509Certificate<'_>,
     issuer: &X509Certificate<'_>,
@@ -209,11 +207,9 @@ pub fn check_sign_manual(
                 valid = "KO".red().bold();
             }
         }
-        PublicKey::EC(ec_pubkey) => {
-            let ecdsa = EcdsaSigValue::from_der(ec_pubkey.data())?.1;
-
-            let r = ecdsa.r;
-            let s = ecdsa.s;
+        PublicKey::EC(_ec_point) => {
+            // unimplemented
+            valid = "KO".red().bold();
         }
         _ => unreachable!("Unsupported Public Key Algorithm."),
     }
