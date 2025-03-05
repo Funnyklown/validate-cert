@@ -4,6 +4,7 @@ use x509_parser::certificate::X509Certificate;
 use x509_parser::oid_registry::OidRegistry;
 use x509_parser::prelude::{GeneralName, ParsedExtension};
 use x509_parser::public_key::PublicKey;
+
 /// Should be checking ocsp, but as let's encrypt is sunsetting the entire protocol as of may 2025
 /// no rust crate has been built to verify an obsolete protocol.
 /// see: https://letsencrypt.org/2024/12/05/ending-ocsp/
