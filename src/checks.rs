@@ -202,7 +202,7 @@ pub fn check_sign_manual(
             let res_slice = padded_result.as_slice();
 
             // remove padding as per https://www.rfc-editor.org/rfc/rfc2313.html
-            // this is a bit of a hack we just look for the 0x00 that has to appear 
+            // this is a bit of a hack we just look for the 0x00 that has to appear
             // after the padding and read from there
             let depadded_result = res_slice
                 .iter()
