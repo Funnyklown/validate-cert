@@ -11,6 +11,7 @@ pub fn check_crl(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>) -> an
     let mut crl = None;
     let mut valid = "OK".green().bold();
 
+    // extracts the crl uri from the certificate extensions
     for ext in cert.extensions_map()?.values() {
         if let ParsedExtension::CRLDistributionPoints(points) = ext.parsed_extension() {
             for point in points.iter() {
@@ -30,6 +31,7 @@ pub fn check_crl(cert: &X509Certificate<'_>, issuer: &X509Certificate<'_>) -> an
         }
     }
 
+    // if there's no crl in the cert, the check obviously fails.
     if crl.is_none() {
         valid = "KO".red().bold();
     }
@@ -77,7 +79,7 @@ pub fn get_crl_state(
     {
         let data = reqwest::blocking::get(uri)?.bytes()?.to_vec();
         fs::write(&filepath, &data)?;
-        let (_, crl) = CertificateRevocationList::from_der(&data)?;
+        let crl = CertificateRevocationList::from_der(&data)?.1;
         return Ok(validate_crl(&crl, cert, issuer));
     }
 

@@ -135,6 +135,7 @@ fn print_pubkey(cert: &X509Certificate, registry: &OidRegistry) -> anyhow::Resul
     Ok(())
 }
 
+///Truncates a string (public key, signature..) for easier formatting
 pub fn truncate(s: &str, max_len: usize) -> String {
     if s.chars().count() <= max_len {
         s.to_string()

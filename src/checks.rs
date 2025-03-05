@@ -180,11 +180,13 @@ pub fn check_sign_manual(
 ) -> anyhow::Result<()> {
     let mut valid = "OK".green().bold();
 
+    // fixed value as per https://www.rfc-editor.org/rfc/rfc3447#page-43
     let sha256_header = hex::decode("3031300d060960864801650304020105000420")?;
 
     let digest = ring::digest::digest(&ring::digest::SHA256, cert.tbs_certificate.as_ref());
     let hash = digest.as_ref();
 
+    // expected = H(sha256_header) || H(cert)
     let mut expected = Vec::new();
     expected.extend_from_slice(&sha256_header);
     expected.extend_from_slice(hash);
@@ -195,20 +197,28 @@ pub fn check_sign_manual(
             let e = BigUint::from_bytes_be(rsa_pubkey.exponent);
             let n = BigUint::from_bytes_be(rsa_pubkey.modulus);
 
+            // s^e[n]
             let padded_result = s.modpow(&e, &n).to_bytes_be();
             let res_slice = padded_result.as_slice();
+
+            // remove padding as per https://www.rfc-editor.org/rfc/rfc2313.html
+            // this is a bit of a hack we just look for the 0x00 that has to appear 
+            // after the padding and read from there
             let depadded_result = res_slice
                 .iter()
                 .position(|&b| b == 0x00)
                 .map(|pos| &res_slice[pos + 1..])
                 .unwrap_or(&[]);
 
+            // if the depadded result is not H(sha256_header) || H(cert)
+            // the signature has to be problematic
             if depadded_result != expected {
                 valid = "KO".red().bold();
             }
         }
         PublicKey::EC(_ec_point) => {
-            // unimplemented
+            // unimplemented, X509_parser is still in development,
+            // does not expose the required elements (r,s..)
             valid = "KO".red().bold();
         }
         _ => unreachable!("Unsupported Public Key Algorithm."),
